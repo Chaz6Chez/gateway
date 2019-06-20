@@ -1,22 +1,20 @@
 package service
 
 import (
-	"fmt"
-
 	"github.com/fagongzi/gateway/pkg/pb/metapb"
 	"github.com/fagongzi/grpcx"
 	"github.com/fagongzi/log"
 	"github.com/labstack/echo"
 )
 
-func initAPIRouter(server *echo.Echo) {
-	server.GET(fmt.Sprintf("/%s%s", apiVersion, "/apis/:id"),
+func initAPIRouter(server *echo.Group) {
+	server.GET("/apis/:id",
 		grpcx.NewGetHTTPHandle(idParamFactory, getAPIHandler))
-	server.DELETE(fmt.Sprintf("/%s%s", apiVersion, "/apis/:id"),
+	server.DELETE("/apis/:id",
 		grpcx.NewGetHTTPHandle(idParamFactory, deleteAPIHandler))
-	server.PUT(fmt.Sprintf("/%s%s", apiVersion, "/apis"),
+	server.PUT("/apis",
 		grpcx.NewJSONBodyHTTPHandle(putAPIFactory, postAPIHandler))
-	server.GET(fmt.Sprintf("/%s%s", apiVersion, "/apis"),
+	server.GET("/apis",
 		grpcx.NewGetHTTPHandle(limitQueryFactory, listAPIHandler))
 }
 
@@ -24,7 +22,7 @@ func postAPIHandler(value interface{}) (*grpcx.JSONResult, error) {
 	id, err := Store.PutAPI(value.(*metapb.API))
 	if err != nil {
 		log.Errorf("api-api-put: req %+v, errors:%+v", value, err)
-		return nil, err
+		return &grpcx.JSONResult{Code: -1, Data: err.Error()}, nil
 	}
 
 	return &grpcx.JSONResult{Data: id}, nil
@@ -34,7 +32,7 @@ func deleteAPIHandler(value interface{}) (*grpcx.JSONResult, error) {
 	err := Store.RemoveAPI(value.(uint64))
 	if err != nil {
 		log.Errorf("api-api-delete: req %+v, errors:%+v", value, err)
-		return nil, err
+		return &grpcx.JSONResult{Code: -1, Data: err.Error()}, nil
 	}
 
 	return &grpcx.JSONResult{}, nil
@@ -44,7 +42,7 @@ func getAPIHandler(value interface{}) (*grpcx.JSONResult, error) {
 	value, err := Store.GetAPI(value.(uint64))
 	if err != nil {
 		log.Errorf("api-api-get: req %+v, errors:%+v", value, err)
-		return nil, err
+		return &grpcx.JSONResult{Code: -1, Data: err.Error()}, nil
 	}
 
 	return &grpcx.JSONResult{Data: value}, nil
@@ -63,7 +61,7 @@ func listAPIHandler(value interface{}) (*grpcx.JSONResult, error) {
 	})
 	if err != nil {
 		log.Errorf("api-api-list-get: req %+v, errors:%+v", value, err)
-		return nil, err
+		return &grpcx.JSONResult{Code: -1, Data: err.Error()}, nil
 	}
 
 	return &grpcx.JSONResult{Data: values}, nil

@@ -2,26 +2,19 @@ package proxy
 
 import (
 	"errors"
-	"math/rand"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/fagongzi/gateway/pkg/filter"
 	"github.com/fagongzi/gateway/pkg/pb/metapb"
 )
 
-const (
-	// RateBase base rate
-	RateBase = 100
-)
-
 var (
-	// ErrCircuitClose server is in circuit close
-	ErrCircuitClose = errors.New("server is in circuit close")
-	// ErrCircuitHalfLimited server is in circuit half, traffic limit
-	ErrCircuitHalfLimited = errors.New("server is in circuit half, traffic limit")
-
-	rd = rand.New(rand.NewSource(time.Now().UnixNano()))
+	// ErrCircuitClose resource is in circuit close
+	ErrCircuitClose = errors.New("resource is in circuit close")
+	// ErrCircuitHalfLimited resource is in circuit half, traffic limit
+	ErrCircuitHalfLimited = errors.New("resource is in circuit half, traffic limit")
 )
 
 // CircuitBreakeFilter CircuitBreakeFilter
@@ -45,63 +38,76 @@ func (f *CircuitBreakeFilter) Name() string {
 
 // Pre execute before proxy
 func (f *CircuitBreakeFilter) Pre(c filter.Context) (statusCode int, err error) {
-	cb := c.Server().CircuitBreaker
+	pc := c.(*proxyContext)
+	cb, barrier := pc.circuitBreaker()
 	if cb == nil {
 		return f.BaseFilter.Pre(c)
 	}
 
-	switch c.(*proxyContext).circuitStatus() {
+	protectedResourceStatus := pc.circuitStatus()
+	protectedResource := pc.circuitResourceID()
+
+	switch protectedResourceStatus {
 	case metapb.Open:
-		if c.Analysis().GetRecentlyRequestFailureRate(c.Server().ID, time.Duration(c.Server().CircuitBreaker.RateCheckPeriod)) >= int(cb.FailureRateToClose) {
-			c.(*proxyContext).changeCircuitStatusToClose()
-			c.Analysis().Reject(c.Server().ID)
+		if c.Analysis().GetRecentlyRequestFailureRate(protectedResource, time.Duration(cb.RateCheckPeriod)) >= int(cb.FailureRateToClose) {
+			pc.changeCircuitStatusToClose()
+			c.Analysis().Reject(protectedResource)
 			return http.StatusServiceUnavailable, ErrCircuitClose
 		}
 
 		return http.StatusOK, nil
 	case metapb.Half:
-		if limitAllow(cb.HalfTrafficRate) {
+		if barrier.Allow() {
 			return f.BaseFilter.Pre(c)
 		}
 
-		c.Analysis().Reject(c.Server().ID)
+		c.Analysis().Reject(protectedResource)
 		return http.StatusServiceUnavailable, ErrCircuitHalfLimited
 	default:
-		c.Analysis().Reject(c.Server().ID)
+		c.Analysis().Reject(protectedResource)
 		return http.StatusServiceUnavailable, ErrCircuitClose
 	}
 }
 
 // Post execute after proxy
 func (f *CircuitBreakeFilter) Post(c filter.Context) (statusCode int, err error) {
-	cb := c.Server().CircuitBreaker
+	pc := c.(*proxyContext)
+	cb, _ := pc.circuitBreaker()
 	if cb == nil {
-		return f.BaseFilter.Pre(c)
+		return f.BaseFilter.Post(c)
 	}
 
-	if c.(*proxyContext).circuitStatus() == metapb.Half &&
-		c.Analysis().GetRecentlyRequestSuccessedRate(c.Server().ID, time.Duration(c.Server().CircuitBreaker.RateCheckPeriod)) >= int(cb.SucceedRateToOpen) {
-		c.(*proxyContext).changeCircuitStatusToOpen()
+	protectedResourceStatus := pc.circuitStatus()
+	protectedResource := pc.circuitResourceID()
+
+	if protectedResourceStatus == metapb.Half &&
+		c.Analysis().GetRecentlyRequestSuccessedRate(protectedResource, time.Duration(cb.RateCheckPeriod)) >= int(cb.SucceedRateToOpen) {
+		pc.changeCircuitStatusToOpen()
 	}
 
 	return f.BaseFilter.Post(c)
 }
 
 // PostErr execute proxy has errors
-func (f *CircuitBreakeFilter) PostErr(c filter.Context) {
-	cb := c.Server().CircuitBreaker
-	if cb == nil {
-		f.BaseFilter.PostErr(c)
+func (f *CircuitBreakeFilter) PostErr(c filter.Context, code int, err error) {
+	// ignore user cancel
+	if nil != err && strings.HasPrefix(err.Error(), ErrPrefixRequestCancel) {
+		f.BaseFilter.PostErr(c, code, err)
 		return
 	}
 
-	if c.(*proxyContext).circuitStatus() == metapb.Half &&
-		c.Analysis().GetRecentlyRequestFailureRate(c.Server().ID, time.Duration(c.Server().CircuitBreaker.RateCheckPeriod)) >= int(cb.FailureRateToClose) {
-		c.(*proxyContext).changeCircuitStatusToClose()
+	pc := c.(*proxyContext)
+	cb, _ := pc.circuitBreaker()
+	if cb == nil {
+		f.BaseFilter.PostErr(c, code, err)
+		return
 	}
-}
 
-func limitAllow(rate int32) bool {
-	randValue := rd.Intn(RateBase)
-	return randValue < int(rate)
+	protectedResourceStatus := pc.circuitStatus()
+	protectedResource := pc.circuitResourceID()
+
+	if protectedResourceStatus == metapb.Half &&
+		c.Analysis().GetRecentlyRequestFailureRate(protectedResource, time.Duration(cb.RateCheckPeriod)) >= int(cb.FailureRateToClose) {
+		pc.changeCircuitStatusToClose()
+	}
 }

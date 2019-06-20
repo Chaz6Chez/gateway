@@ -11,10 +11,9 @@ var hopHeaders = []string{
 	"Keep-Alive",
 	"Proxy-Authenticate",
 	"Proxy-Authorization",
-	"Te", // canonicalized version of "TE"
+	"Te",
 	"Trailers",
 	"Transfer-Encoding",
-	"Upgrade",
 }
 
 // HeadersFilter HeadersFilter

@@ -1,60 +1,141 @@
 API
 -----------
-API是Gateway的核心概念。可以通过Gateway的API-Server管理API。
+API is the key concept of Gateway. We can manage APIs through API-Server of Gateway.
 
-# API属性
+# API Attributes
 ## ID
-API的ID，唯一标识一个API。
+API's ID, unique identifier
 
 ## Name
-API的名称。
+API's name
 
 ## URLPattern
-URL匹配模式，使用正则表达式表示。Gateway使用该字段来匹配原始请求的URL。该字段必须和`Method`配合使用，同时满足才算这个请求匹配了这个API。
+URL Matching Expression. Gateway uses this to match original request URLs. URLPattern must be used with `Method`. These two need to be met for the request to be qualified as matching the API.
 
-## Method
-HTTP Method， `*` 匹配所有的HTTP Method（GET,PUT,POST,DELETE）。该字段必须和`URLPattern`配合使用，同时满足才算这个请求匹配了这个API。
+### URLPattern Expression
+`/` is used to divide URL Path. Each part can be the following types：
 
-## Domain（可选）
-host，当原始请求的host等于该值，则认为匹配了当前的API，同时忽略`URLPattern`和`Method`。
+* string constant: any legitimate URLs. May use `*` to match any string
+* (number): argeName a number variable
+* (string) a string variable
+* (enum:enum1|enum1|enum1) a enum variable. Available enums are divided by |.
+* If these variables are needed, for example, in URL Rewrite, you could use:
+    * (number):id
+    * (string):name
+    * (enum:on|off):action
+
+Some examples:
+* `/api/v1/product/(number):id`
+* `/api/v1/product/(number):id/(enum:online|offline):action`
+* `/api/v1/*`
+
+## Method (Optional)
+It is used to match HTTP request's `HTTP Method` field, `*` matches all HTTP Method (GET, PUT, POST, DELETE).
+
+## Domain (Optional)
+It matches HOST field of HTTP requests.
+
+## MatchRule
+Matching Rules of `URLPattern`,`Method`,`Domain`
+* MatchDefault `URLPattern` && (`Method` || `Domain`)
+* MatchAll `URLPattern` && (`Method` && `Domain`)
+* MatchAny `URLPattern` && (`Method` || `Domain`)
 
 ## Status
-API 状态枚举, 有2个值组成： `UP` 和 `Down`。只有`UP`状态才能生效。
+`UP`, `Down`. API valid only if `UP`.
 
-## IPAccessControl（可选）
-IP的访问控制，有黑白名单2个部门组成。
+## IPAccessControl (Optional)
+White list and black list
 
-## DefaultValue（可选）
-API的默认返回值，当后端Cluster无可用Server的时候，Gateway将返回这个默认值，默认值由Code、HTTP Body、Header、Cookie组成。可以用来做Mock或者后端服务故障时候的默认返回。
+## DefaultValue (Optional)
+API's default return value. When there is no available server in the backend cluster, Gateway returns this value which consists of Code, HTTP Body, Header, and Cookie. It can be used as the default return value of Mock or backend services.
+
+## Aggregation Requests
+An original request is redirected to multiple backend servers and the reponses are merged into a JSON instance whose attributes correspond to each reponse. Multiple redirected requests can be sent simultaneously or in a batch (a request argument depends on prior one's response). `BatchIndex` sets the order of each redirected requests.
+
+Example
+* Original Request: `/api/v1/aggregation/1`
+* Redirected Request: `/api/v1/users/1`，Response: `{"name":"zhangsan"}`, Attribute: `user`
+* Redirected Request: `/api/v1/accounts/1`，Response: `{"type":"test", "accountId":"123"}`，Attribute: `account`
+* Final Response：`{"user":{"name":"zhangsan"}, "account":{"type":"test", "accountId":"123"}}`
 
 ## Nodes
-请求被转发到的后端Cluster。至少设置一个转发Cluster，一个请求可以被同时转发到多个后端Cluster（目前仅支持GET请求设置多个转发）。在转发的时候，针对每一个转发支持以下特性：
+Requests are redirected to at least one backend cluster. One request can be sent to multiple backend clusters at the same time (Currently only HTTP GET requests are supported). Redirected requests supports the following features.
 
-* 支持URL重写
+### URL Rewrite
+It reconstructs real URLs redirected to backend servers.
 
-  例如，API对外提供的URL是`/api/users/1`，后端真实server提供的URL是`/users?id=1`，类似这种情况需要对原始URL进行重写。
-  对于这个重写，我们需要配置API的`URLPattern`属性为`/api/users/(\d+)`，并且配置转发的URL重写规则为：`users?id=$1`
-* 支持对原始请求的参数校验
+#### URL Rewrite Expression
+Variables are supported in expressions. In runtime, `$()` are replaced by real values. `.` is used to access a variable's attributes.
 
-  支持针对`querystring`、`json body`、`cookie`、`header`、`path value`中的任意属性配置正则表达式的校验规则
-* 聚合多个后端Cluster的响应，统一返回
+##### origin variable
+origin variable is used to extract `query string`,`header`,`cookie`,`body` of original requests. For multiple arguments with the same name, individual fetch is not supported.
 
-  支持一个请求被同时分发到多个后端Cluster，并且为每一个后端Cluster返回的数据设置一个属性名，并且聚合所有的返回值作为一个JSON统一返回。例如：一个前端APP的页面需要显示用户账户信息以及用户的基本信息，可以使用这个特性，定制一个API`/api/users/(\d+)`，同时配置分发到2个后端Cluster，并且配置URL的重写规则为`/users/base/$1`和`/users/account/$1`，这样聚合2个信息返回。并且支持依赖转发，首先请求一个后端api得到返回的结果，并且使用返回结果的某一属性作为下次请求的参数。例如定制一个API`/api/users/(\d+)`，聚合后端2个服务`/users/base/$1`和`/users/account/$user.accountId`，那么可以设置`/users/account/$user.accountId`转发的`BatchIndex`为`1`，那么`/users/account/$user.accountId`会在`/users/base/$1`返回之后再转发，并且替换`$user.accountId`为返回的值。
+An Original Request
+* URL: `/api/v1/users?id=1&name=fagongzi&page=1&pageSize=100`,
+* Header: `x-test-token: token1, x-test-id: 100`
+* Cookie: `x-cookie-token: token2, x-cookie-id: 200`
+* Body: `{"type":1, "value":{"id":100, "name":"zhangsan"}}`
 
-## Perms（可选）
-设置访问这个API需要的权限，需要用户自己开发权限检查插件。
+Variable Form
+* $(origin.query) = `?id=1&name=fagongzi&page=1&pageSize=100`
+* $(origin.path) = `/api/v1/users`
+* $(origin.query.id) = `1`, $(origin.query.name) = `fagongzi`, $(origin.query.page) = `1`, $(origin.query.pageSize) = `100`
+* $(origin.header.x-test-token) = `token1`, $(origin.header.x-test-id) = `100`
+* $(origin.cookie.x-cookie-token) = `token2`, $(origin.cookie.x-cookie-id) = `200`
+* $(origin.body.type) = `1`, $(origin.body.value.id) = `100`, $(origin.body.value.name) = `zhangsan`
 
-## AuthFilter（可选）
-指定该API所使用的Auth插件名称，Auth插件的实现可以借鉴[JWT插件](https://github.com/fagongzi/jwt-plugin)
+#### param variable
+param variable is used to extract variables from API's `URLPattern`.
+
+Suppose:
+* API's `URLPattern` is `/api/v1/users/(number):id/(enum:on|off):action`
+* Request URL is `/api/v1/users/100/on`
+
+Variable Form
+* $(param.id) = `100`
+* $(param.action) = `on`
+
+#### depend variable
+depend variable is used to extract data from return values of depend aggregation requests.
+
+Suppose an aggregation request consists of two requests, user and account
+* user: {"name":"zhangsan"}
+* account: {"id":"123456"}
+
+Variable Example
+* $(depend.user.name) = `zhangsan`
+* $(depend.account.id) = `123456`
+
+#### URL Rewrite Expression Examples
+* `/api/v1/users$(origin.query)`
+* `$(origin.path)?name=$(origin.header.x-user-name)&id=$(origin.body.user.id)`
+* `/api/v1/users?id=$(param.id)&action=$(param.action)`
+* `/api/v1/accounts?id=$(depend.user.accountId)`
+
+### Support for Check of Arguments in Original Requests
+  Regular Expression Check Rule of Any Attribute Configuration in `querystring`, `json body`, `cookie`, `header` and `path value` is supported
+
+###  Retry After Failure Is Supported
+  `retryStrategy` can be set to retry based on HTTP response status. Maximum  number of trials and the interval of trial can be set.
+
+### API Class Timeout
+  `ReadTimeout` and `WriteTimeout` can be set to designate a request's read and write timeout. If not set, default global configuratio is used.
+
+## Perms (Optional)
+It is used to configure permission of an API. Users need to develop their own permission check plugins.
+
+## AuthFilter (Optional)
+Set an API's Auth plugin name. Reference to implementation of Auth plugin [JWT plugin](https://github.com/fagongzi/jwt-plugin)
 
 ## RenderTemplate
-使用RenderTemplate可以重新定义返回的数据，包括数据的格式，字段等等。
+RenderTemplate can be used to redefine responses which include data format and fields.
 
-## UseDefault（可选）
+## UseDefault (Optional)
 
-当该值为True且`DefaultValue`存在时，直接使用`DefaultValue`作为返回值。
+When it is true and `DefaultValue`exists, `DefaultValue` is used as response value.
 
-## MatchRule（可选）
+## MatchRule (Optional)
 
 | MatchRule | Logic |
 | - | - |
@@ -62,9 +143,33 @@ API的默认返回值，当后端Cluster无可用Server的时候，Gateway将返
 | MatchAll | `Domain` && `URLPattern` && `Method` |
 | MatchAny | `Domain` \|\| `URLPattern` \|\| `Method` |
 
-## Position（可选）
+## Position (Optional)
 
-API匹配时按该值的升序匹配，即值越小优先级越高。默认值为0.
+This value is used in increasing order in API matching phase. The smaller the value is, the higher the priority. Default value is 0.
 
-## Tags（可选）
-给API加上Tag标签，便于维护和检索。
+## Tags (Optional)
+For maintenance and search.
+
+## WebSocketOptions (Optional)
+websocket option, `websocket`. Attention: `websocket is still under testing phase. Closed by default. --websocket can be used to start`。When Gateway redirects websocket, `Origin` uses address of backend servers by default. If special value needs to be set, `Origin` argument can be designated.
+
+## MaxQPS (Optional)
+Maximal QPS API can support. Used to controll traffic. Gateway uses the Token Bucket Algorithm, restricting traffic by MaxQPS, thus protecting backend servers from overload. The priority of API is higher than what it is in `server`.
+
+## CircuitBreaker（可选）
+Backend API circuit break rule. It has three modes.
+
+## CircuitBreaker (Optional)
+Backend server circuit break status:
+
+* Open
+
+  Normal. All traffic in. When Gateway find the failed requests to all requests ratio reach a certain threshold, CircuitBreaker switches from Open to Close.
+
+* Half
+
+  Attempt to recover. Gateway tries to direct a certain percentage of traffic to the server and observe the result. If the expectation is met, CircuitBreaker switches to Open. If not, Close.
+
+* Close
+
+  Gateway does not direct any traffic to this backend server. When the time threshold is reached, Gateway automatically tries to recover by switching to Half.

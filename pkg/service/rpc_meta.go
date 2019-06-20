@@ -298,6 +298,15 @@ func (s *metaService) AddBind(ctx context.Context, req *rpcpb.AddBindReq) (*rpcp
 	}
 }
 
+func (s *metaService) Batch(ctx context.Context, req *rpcpb.BatchReq) (*rpcpb.BatchRsp, error) {
+	select {
+	case <-ctx.Done():
+		return nil, errRPCCancel
+	default:
+		return s.db.Batch(req)
+	}
+}
+
 func (s *metaService) RemoveBind(ctx context.Context, req *rpcpb.RemoveBindReq) (*rpcpb.RemoveBindRsp, error) {
 	select {
 	case <-ctx.Done():
@@ -342,5 +351,128 @@ func (s *metaService) GetBindServers(ctx context.Context, req *rpcpb.GetBindServ
 		return &rpcpb.GetBindServersRsp{
 			Servers: servers,
 		}, nil
+	}
+}
+
+func (s *metaService) PutPlugin(ctx context.Context, req *rpcpb.PutPluginReq) (*rpcpb.PutPluginRsp, error) {
+	select {
+	case <-ctx.Done():
+		return nil, errRPCCancel
+	default:
+		id, err := s.db.PutPlugin(&req.Plugin)
+		if err != nil {
+			return nil, err
+		}
+
+		return &rpcpb.PutPluginRsp{
+			ID: id,
+		}, nil
+	}
+}
+
+func (s *metaService) RemovePlugin(ctx context.Context, req *rpcpb.RemovePluginReq) (*rpcpb.RemovePluginRsp, error) {
+	select {
+	case <-ctx.Done():
+		return nil, errRPCCancel
+	default:
+		err := s.db.RemovePlugin(req.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		return &rpcpb.RemovePluginRsp{}, nil
+	}
+}
+
+func (s *metaService) GetPlugin(ctx context.Context, req *rpcpb.GetPluginReq) (*rpcpb.GetPluginRsp, error) {
+	select {
+	case <-ctx.Done():
+		return nil, errRPCCancel
+	default:
+		value, err := s.db.GetPlugin(req.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		return &rpcpb.GetPluginRsp{
+			Plugin: value,
+		}, nil
+	}
+}
+
+func (s *metaService) GetPluginList(req *rpcpb.GetPluginListReq, stream rpcpb.MetaService_GetPluginListServer) error {
+	for {
+		select {
+		case <-stream.Context().Done():
+			return errRPCCancel
+		default:
+			err := s.db.GetPlugins(limit, func(value interface{}) error {
+				return stream.Send(value.(*metapb.Plugin))
+			})
+
+			if err != nil {
+				return err
+			}
+
+			return nil
+		}
+	}
+}
+
+func (s *metaService) ApplyPlugins(ctx context.Context, req *rpcpb.ApplyPluginsReq) (*rpcpb.ApplyPluginsRsp, error) {
+	select {
+	case <-ctx.Done():
+		return nil, errRPCCancel
+	default:
+		err := s.db.ApplyPlugins(&req.Applied)
+		if err != nil {
+			return nil, err
+		}
+
+		return &rpcpb.ApplyPluginsRsp{}, nil
+	}
+}
+
+func (s *metaService) GetAppliedPlugins(ctx context.Context, req *rpcpb.GetAppliedPluginsReq) (*rpcpb.GetAppliedPluginsRsp, error) {
+	select {
+	case <-ctx.Done():
+		return nil, errRPCCancel
+	default:
+		value, err := s.db.GetAppliedPlugins()
+		if err != nil {
+			return nil, err
+		}
+
+		return &rpcpb.GetAppliedPluginsRsp{
+			Applied: value,
+		}, nil
+	}
+}
+
+func (s *metaService) Clean(ctx context.Context, req *rpcpb.CleanReq) (*rpcpb.CleanRsp, error) {
+	select {
+	case <-ctx.Done():
+		return nil, errRPCCancel
+	default:
+		err := s.db.Clean()
+		if err != nil {
+			return nil, err
+		}
+
+		return &rpcpb.CleanRsp{}, nil
+	}
+}
+
+func (s *metaService) SetID(ctx context.Context, req *rpcpb.SetIDReq) (*rpcpb.SetIDRsp, error) {
+	select {
+	case <-ctx.Done():
+		return nil, errRPCCancel
+	default:
+		err := s.db.SetID(req.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		return &rpcpb.SetIDRsp{}, nil
 	}
 }

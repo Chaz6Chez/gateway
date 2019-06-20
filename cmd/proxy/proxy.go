@@ -32,8 +32,13 @@ var (
 	filters        = &filterFlag{}
 
 	addr                          = flag.String("addr", "127.0.0.1:80", "Addr: http request entrypoint")
+	addrHTTPS                     = flag.String("addr-https", "127.0.0.1:443", "Addr: https request entrypoint")
+	defaultTLSCert                = flag.String("default-tls-cert", "", "Default TLS cert file path")
+	defaultTLSKey                 = flag.String("default-tls-key", "", "Default TLS key file path")
 	addrRPC                       = flag.String("addr-rpc", "127.0.0.1:9091", "Addr: manager request entrypoint")
 	addrStore                     = flag.String("addr-store", "etcd://127.0.0.1:2379", "Addr: store of meta data, support etcd")
+	addrStoreUser                 = flag.String("addr-store-user", "", "addr Store UserName")
+	addrStorePwd                  = flag.String("addr-store-pwd", "", "addr Store Password")
 	addrPPROF                     = flag.String("addr-pprof", "", "Addr: pprof addr")
 	namespace                     = flag.String("namespace", "dev", "The namespace to isolation the environment.")
 	limitCpus                     = flag.Int("limit-cpus", 0, "Limit: schedule threads count")
@@ -54,16 +59,20 @@ var (
 	version                       = flag.Bool("version", false, "Show version info")
 
 	// internal plugin configuration file
-	jwtCfg = flag.String("jwt", "", "PLugin(JWT): jwt plugin configuration file, json format")
+	jwtCfg = flag.String("jwt", "", "Plugin(JWT): jwt plugin configuration file, json format")
 
 	// metric
 	metricJob          = flag.String("metric-job", "", "prometheus job name")
 	metricInstance     = flag.String("metric-instance", "", "prometheus instance name")
 	metricAddress      = flag.String("metric-address", "", "prometheus proxy address")
 	metricIntervalSync = flag.Uint64("interval-metric-sync", 0, "Interval(sec): metric sync")
+
+	// enable features
+	enableWebSocket = flag.Bool("websocket", false, "enable websocket")
 )
 
 func init() {
+	defaultFilters.Set(proxy.FilterPrepare)
 	defaultFilters.Set(proxy.FilterWhiteList)
 	defaultFilters.Set(proxy.FilterBlackList)
 	defaultFilters.Set(proxy.FilterCaching)
@@ -74,13 +83,15 @@ func init() {
 	defaultFilters.Set(proxy.FilterHeader)
 	defaultFilters.Set(proxy.FilterXForward)
 	defaultFilters.Set(proxy.FilterValidation)
+	defaultFilters.Set(proxy.FilterJSPlugin)
 }
 
 func main() {
 	flag.Var(filters, "filter", "Plugin(Filter): format is <filter name>[:plugin file path][:plugin config file path]")
 	flag.Parse()
 
-	if *version && util.PrintVersion() {
+	if *version {
+		util.PrintVersion()
 		os.Exit(0)
 	}
 
@@ -133,9 +144,14 @@ func getCfg() *proxy.Cfg {
 	}
 
 	cfg.Addr = *addr
+	cfg.AddrHTTPS = *addrHTTPS
+	cfg.DefaultTLSCert = *defaultTLSCert
+	cfg.DefaultTLSKey = *defaultTLSKey
 	cfg.AddrRPC = *addrRPC
 	cfg.AddrPPROF = *addrPPROF
 	cfg.AddrStore = *addrStore
+	cfg.AddrStoreUserName = *addrStoreUser
+	cfg.AddrStorePwd = *addrStorePwd
 	cfg.TTLProxy = *ttlProxy
 	cfg.Namespace = fmt.Sprintf("/%s", *namespace)
 	cfg.Option.LimitBytesBody = *limitBytesBodyMB * 1024 * 1024
@@ -152,6 +168,7 @@ func getCfg() *proxy.Cfg {
 	cfg.Option.LimitTimeoutWrite = time.Second * time.Duration(*limitTimeoutWriteSec)
 	cfg.Option.LimitIntervalHeathCheck = time.Second * time.Duration(*limitIntervalHeathCheckSec)
 	cfg.Option.JWTCfgFile = *jwtCfg
+	cfg.Option.EnableWebSocket = *enableWebSocket
 
 	specs := defaultFilters
 	if len(*filters) > 0 {

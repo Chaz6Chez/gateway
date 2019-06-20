@@ -3,20 +3,22 @@ package proxy
 import (
 	"sync"
 
+	"github.com/fagongzi/gateway/pkg/expr"
 	"github.com/fagongzi/goetty"
 )
 
 var (
 	renderPool       sync.Pool
 	contextPool      sync.Pool
-	dispathNodePool  sync.Pool
+	dispatchNodePool  sync.Pool
 	multiContextPool sync.Pool
 	wgPool           sync.Pool
+	exprCtxPool      sync.Pool
 	bytesPool        = goetty.NewSyncPool(2, 1024*1024*5, 2)
 
 	emptyRender      = render{}
 	emptyContext     = proxyContext{}
-	emptyDispathNode = dispathNode{}
+	emptyDispathNode = dispatchNode{}
 )
 
 func acquireWG() *sync.WaitGroup {
@@ -50,19 +52,19 @@ func releaseMultiContext(value *multiContext) {
 	}
 }
 
-func acquireDispathNode() *dispathNode {
-	v := dispathNodePool.Get()
+func acquireDispathNode() *dispatchNode {
+	v := dispatchNodePool.Get()
 	if v == nil {
-		return &dispathNode{}
+		return &dispatchNode{}
 	}
 
-	return v.(*dispathNode)
+	return v.(*dispatchNode)
 }
 
-func releaseDispathNode(value *dispathNode) {
+func releaseDispathNode(value *dispatchNode) {
 	if value != nil {
 		value.reset()
-		dispathNodePool.Put(value)
+		dispatchNodePool.Put(value)
 	}
 }
 
@@ -95,5 +97,23 @@ func releaseRender(value *render) {
 	if value != nil {
 		value.reset()
 		renderPool.Put(value)
+	}
+}
+
+func acquireExprCtx() *expr.Ctx {
+	v := exprCtxPool.Get()
+	if v == nil {
+		return &expr.Ctx{
+			Params: make(map[string][]byte),
+		}
+	}
+
+	return v.(*expr.Ctx)
+}
+
+func releaseExprCtx(value *expr.Ctx) {
+	if value != nil {
+		value.Reset()
+		exprCtxPool.Put(value)
 	}
 }

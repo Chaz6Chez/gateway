@@ -26,6 +26,8 @@ enum CircuitStatus {
 enum LoadBalance {
     RoundRobin = 0;
     IPHash     = 1;
+    WightRobin = 2;
+    Rand       = 3;
 }
 
 // Protocol is the protocol of the backend api
@@ -70,10 +72,21 @@ enum MatchRule {
     MatchAny     = 2;
 }
 
+enum HostType {
+    HostOrigin        = 0;
+    HostServerAddress = 1;
+    HostCustom        = 2;
+}
+
+enum RateLimitOption {
+    Wait   = 0;
+    Reject = 1;
+}
+
 // Proxy is a meta data of the gateway proxy
 message Proxy {
     optional string addr     = 1 [(gogoproto.nullable) = false];
-	optional string addrRPC  = 2 [(gogoproto.nullable) = false];
+    optional string addrRPC  = 2 [(gogoproto.nullable) = false];
 }
 
 // Cluster is a set of server has same interface
@@ -102,12 +115,14 @@ message CircuitBreaker {
 
 // Server is a backend server that provide api
 message Server {
-    optional uint64         id             = 1 [(gogoproto.nullable) = false, (gogoproto.customname) = "ID"];
-    optional string         addr           = 2 [(gogoproto.nullable) = false];
-    optional Protocol       protocol       = 3 [(gogoproto.nullable) = false];
-    optional int64          maxQPS         = 4 [(gogoproto.nullable) = false];
-    optional HeathCheck     heathCheck     = 5;
-    optional CircuitBreaker circuitBreaker = 6;
+    optional uint64          id              = 1 [(gogoproto.nullable) = false, (gogoproto.customname) = "ID"];
+    optional string          addr            = 2 [(gogoproto.nullable) = false];
+    optional Protocol        protocol        = 3 [(gogoproto.nullable) = false];
+    optional int64           maxQPS          = 4 [(gogoproto.nullable) = false];
+    optional HeathCheck      heathCheck      = 5;
+    optional CircuitBreaker  circuitBreaker  = 6;
+    optional int64           weight          = 7 [(gogoproto.nullable) = false];
+    optional RateLimitOption rateLimitOption = 8 [(gogoproto.nullable) = false];
 }
 
 // Bind is a bind pair with cluster and server
@@ -156,16 +171,28 @@ message Validation {
     repeated ValidationRule rules     = 3 [(gogoproto.nullable) = false];
 }
 
+// RetryStrategy retry strategy
+message RetryStrategy {
+    optional int32 interval = 1 [(gogoproto.nullable) = false];
+    optional int32 maxTimes = 2 [(gogoproto.nullable) = false];
+    repeated int32 codes    = 3;
+}
+
 // DispatchNode is the request forward to
 message DispatchNode {
-    optional uint64     clusterID    = 1 [(gogoproto.nullable) = false];
-    optional string     urlRewrite   = 2 [(gogoproto.nullable) = false, (gogoproto.customname) = "URLRewrite"];
-    optional string     attrName     = 3 [(gogoproto.nullable) = false];
-    repeated Validation validations  = 4;
-    optional Cache      cache        = 5;
-    optional HTTPResult defaultValue = 6 [(gogoproto.nullable) = true];
-    optional bool       useDefault   = 7 [(gogoproto.nullable) = false];
-    optional int32      batchIndex   = 8 [(gogoproto.nullable) = false];
+    optional uint64        clusterID     = 1 [(gogoproto.nullable) = false];
+    optional string        urlRewrite    = 2 [(gogoproto.nullable) = false, (gogoproto.customname) = "URLRewrite"];
+    optional string        attrName      = 3 [(gogoproto.nullable) = false];
+    repeated Validation    validations   = 4;
+    optional Cache         cache         = 5;
+    optional HTTPResult    defaultValue  = 6 [(gogoproto.nullable) = true];
+    optional bool          useDefault    = 7 [(gogoproto.nullable) = false];
+    optional int32         batchIndex    = 8 [(gogoproto.nullable) = false];
+    optional RetryStrategy retryStrategy = 9;
+    optional int64         writeTimeout  = 10[(gogoproto.nullable) = false];
+    optional int64         readTimeout   = 11[(gogoproto.nullable) = false];
+    optional HostType      hostType      = 12[(gogoproto.nullable) = false];
+    optional string        custemHost    = 13[(gogoproto.nullable) = false];
 }
 
 // Cache is used for cache api result
@@ -195,22 +222,34 @@ message RenderAttr {
 
 // API is the api for dispatcher
 message API {
-    optional uint64          id              = 1 [(gogoproto.nullable) = false, (gogoproto.customname) = "ID"];
-    optional string          name            = 2 [(gogoproto.nullable) = false];
-    optional string          urlPattern      = 3 [(gogoproto.nullable) = false, (gogoproto.customname) = "URLPattern"];
-    optional string          method          = 4 [(gogoproto.nullable) = false];
-    optional string          domain          = 5 [(gogoproto.nullable) = false];
-    optional Status          status          = 6 [(gogoproto.nullable) = false];
-    optional IPAccessControl ipAccessControl = 7 [(gogoproto.nullable) = true, (gogoproto.customname) = "IPAccessControl"];
-    optional HTTPResult      defaultValue    = 8 [(gogoproto.nullable) = true];
-    repeated DispatchNode    nodes           = 9;
-    repeated string          perms           = 10;
-    optional string          authFilter      = 11 [(gogoproto.nullable) = false];
-    optional RenderTemplate  renderTemplate  = 12;
-    optional bool            useDefault      = 13 [(gogoproto.nullable) = false];
-    optional MatchRule       matchRule       = 14 [(gogoproto.nullable) = false];
-    optional uint32          position        = 15 [(gogoproto.nullable) = false];
-    repeated PairValue       tags            = 16;
+    optional uint64           id               = 1 [(gogoproto.nullable) = false, (gogoproto.customname) = "ID"];
+    optional string           name             = 2 [(gogoproto.nullable) = false];
+    optional string           urlPattern       = 3 [(gogoproto.nullable) = false, (gogoproto.customname) = "URLPattern"];
+    optional string           method           = 4 [(gogoproto.nullable) = false];
+    optional string           domain           = 5 [(gogoproto.nullable) = false];
+    optional Status           status           = 6 [(gogoproto.nullable) = false];
+    optional IPAccessControl  ipAccessControl  = 7 [(gogoproto.nullable) = true, (gogoproto.customname) = "IPAccessControl"];
+    optional HTTPResult       defaultValue     = 8 [(gogoproto.nullable) = true];
+    repeated DispatchNode     nodes            = 9;
+    repeated string           perms            = 10;
+    optional string           authFilter       = 11 [(gogoproto.nullable) = false];
+    optional RenderTemplate   renderTemplate   = 12;
+    optional bool             useDefault       = 13 [(gogoproto.nullable) = false];
+    optional MatchRule        matchRule        = 14 [(gogoproto.nullable) = false];
+    optional uint32           position         = 15 [(gogoproto.nullable) = false];
+    repeated PairValue        tags             = 16;
+    optional WebSocketOptions webSocketOptions = 17;
+    optional int64            maxQPS           = 18 [(gogoproto.nullable) = false];
+    optional CircuitBreaker   circuitBreaker   = 19;
+    optional RateLimitOption  rateLimitOption  = 20 [(gogoproto.nullable) = false];
+    optional bool             useTLS           = 21 [(gogoproto.nullable) = false];
+    optional TLSEmbedCert     tlsEmbedCert     = 22;
+}
+
+// TLSEmbedCert tlsEmbedCert options
+message TLSEmbedCert {
+    optional bytes certData = 1 [(gogoproto.nullable) = true];
+    optional bytes keyData  = 2 [(gogoproto.nullable) = true];
 }
 
 // Condition is a condition for routing
@@ -230,4 +269,49 @@ message Routing {
     optional Status          status      = 6 [(gogoproto.nullable) = false];
     optional uint64          api         = 7 [(gogoproto.nullable) = false, (gogoproto.customname) = "API"];
     optional string          name        = 8 [(gogoproto.nullable) = false];
+}
+
+// WebSocketOptions websocket options
+message WebSocketOptions {
+    optional string origin = 1 [(gogoproto.nullable) = false];
+}
+
+// System system
+message System {
+    optional CountMetric count = 1 [(gogoproto.nullable) = false];
+}
+
+// CountMetric count metric
+message CountMetric {
+    optional int64 cluster       = 1 [(gogoproto.nullable) = false];
+    optional int64 server        = 2 [(gogoproto.nullable) = false];
+    optional int64 api           = 3 [(gogoproto.nullable) = false, (gogoproto.customname) = "API"];
+    optional int64 routing       = 4 [(gogoproto.nullable) = false];
+    optional int64 plugin        = 5 [(gogoproto.nullable) = false];
+    optional int64 appliedPlugin = 6 [(gogoproto.nullable) = false];
+}
+
+// PluginType plugin type enum
+enum PluginType {
+    JavaScript = 0;
+}
+
+// Plugin plugin
+message Plugin {
+    optional uint64     id       = 1 [(gogoproto.nullable) = false, (gogoproto.customname) = "ID"];
+    optional string     name     = 2 [(gogoproto.nullable) = false];
+    optional string     author   = 3 [(gogoproto.nullable) = false];
+    optional string     email    = 4 [(gogoproto.nullable) = false];
+    optional Status     status   = 5 [(gogoproto.nullable) = false];
+    optional int64      updateAt = 6 [(gogoproto.nullable) = false];
+    optional int64      version  = 7 [(gogoproto.nullable) = false];
+    optional PluginType type     = 8 [(gogoproto.nullable) = false];
+    optional bytes      content  = 9;
+    optional bytes      cfg      = 10;
+}
+
+// AppliedPlugins applied plugins
+message AppliedPlugins {
+    optional uint64 id         = 1 [(gogoproto.nullable) = false, (gogoproto.customname) = "ID"];
+    repeated uint64 appliedIDs = 2;
 }

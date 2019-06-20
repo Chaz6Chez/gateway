@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/fagongzi/gateway/pkg/pb/metapb"
+	"github.com/fagongzi/gateway/pkg/pb/rpcpb"
 	"github.com/fagongzi/gateway/pkg/util"
 )
 
@@ -18,7 +19,7 @@ var (
 )
 
 var (
-	supportSchema = make(map[string]func(string, string) (Store, error))
+	supportSchema = make(map[string]func(string, string, BasicAuth) (Store, error))
 )
 
 // EvtType event type
@@ -26,6 +27,12 @@ type EvtType int
 
 // EvtSrc event src
 type EvtSrc int
+
+// BasicAuth basic auth
+type BasicAuth struct {
+	userName string
+	password string
+}
 
 const (
 	// EventTypeNew event type new
@@ -49,6 +56,10 @@ const (
 	EventSrcRouting = EvtSrc(4)
 	// EventSrcProxy routing event
 	EventSrcProxy = EvtSrc(5)
+	// EventSrcPlugin plugin event
+	EventSrcPlugin = EvtSrc(6)
+	// EventSrcApplyPlugin apply plugin event
+	EventSrcApplyPlugin = EvtSrc(7)
 )
 
 // Evt event
@@ -64,7 +75,7 @@ func init() {
 }
 
 // GetStoreFrom returns a store implemention, if not support returns error
-func GetStoreFrom(registryAddr, prefix string) (Store, error) {
+func GetStoreFrom(registryAddr, prefix string, userName string, password string) (Store, error) {
 	u, err := url.Parse(registryAddr)
 	if err != nil {
 		panic(fmt.Sprintf("parse registry addr failed, errors:%+v", err))
@@ -73,13 +84,13 @@ func GetStoreFrom(registryAddr, prefix string) (Store, error) {
 	schema := strings.ToLower(u.Scheme)
 	fn, ok := supportSchema[schema]
 	if ok {
-		return fn(u.Host, prefix)
+		return fn(u.Host, prefix, BasicAuth{userName: userName, password: password})
 	}
 
 	return nil, fmt.Errorf("not support: %s", registryAddr)
 }
 
-func getEtcdStoreFrom(addr, prefix string) (Store, error) {
+func getEtcdStoreFrom(addr, prefix string, basicAuth BasicAuth) (Store, error) {
 	var addrs []string
 	values := strings.Split(addr, ",")
 
@@ -87,7 +98,7 @@ func getEtcdStoreFrom(addr, prefix string) (Store, error) {
 		addrs = append(addrs, fmt.Sprintf("http://%s", value))
 	}
 
-	return NewEtcdStore(addrs, prefix)
+	return NewEtcdStore(addrs, prefix, basicAuth)
 }
 
 // Store store interface
@@ -119,12 +130,23 @@ type Store interface {
 	GetRoutings(limit int64, fn func(interface{}) error) error
 	GetRouting(id uint64) (*metapb.Routing, error)
 
+	PutPlugin(plugin *metapb.Plugin) (uint64, error)
+	RemovePlugin(id uint64) error
+	GetPlugins(limit int64, fn func(interface{}) error) error
+	GetPlugin(id uint64) (*metapb.Plugin, error)
+	ApplyPlugins(applied *metapb.AppliedPlugins) error
+	GetAppliedPlugins() (*metapb.AppliedPlugins, error)
+
 	RegistryProxy(proxy *metapb.Proxy, ttl int64) error
 	GetProxies(limit int64, fn func(*metapb.Proxy) error) error
 
 	Watch(evtCh chan *Evt, stopCh chan bool) error
 
 	Clean() error
+	SetID(id uint64) error
+	BackupTo(to string) error
+	Batch(batch *rpcpb.BatchReq) (*rpcpb.BatchRsp, error)
+	System() (*metapb.System, error)
 }
 
 func getKey(prefix string, id uint64) string {

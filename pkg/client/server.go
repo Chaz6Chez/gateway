@@ -5,6 +5,7 @@ import (
 
 	"github.com/fagongzi/gateway/pkg/pb"
 	"github.com/fagongzi/gateway/pkg/pb/metapb"
+	"github.com/fagongzi/gateway/pkg/pb/rpcpb"
 )
 
 // ServerBuilder server builder
@@ -79,6 +80,12 @@ func (sb *ServerBuilder) MaxQPS(max int64) *ServerBuilder {
 	return sb
 }
 
+// Weight set robin weight
+func (sb *ServerBuilder) Weight(weight int64) *ServerBuilder {
+	sb.value.Weight = weight
+	return sb
+}
+
 // NoCircuitBreaker no circuit breaker
 func (sb *ServerBuilder) NoCircuitBreaker() *ServerBuilder {
 	sb.value.CircuitBreaker = nil
@@ -143,4 +150,16 @@ func (sb *ServerBuilder) Commit() (uint64, error) {
 	}
 
 	return sb.c.putServer(sb.value)
+}
+
+// Build build
+func (sb *ServerBuilder) Build() (*rpcpb.PutServerReq, error) {
+	err := pb.ValidateServer(&sb.value)
+	if err != nil {
+		return nil, err
+	}
+
+	return &rpcpb.PutServerReq{
+		Server: sb.value,
+	}, nil
 }

@@ -25,17 +25,25 @@ type Option struct {
 	LimitBytesCaching          uint64
 
 	JWTCfgFile string
+
+	EnableWebSocket bool
+	EnableJSPlugin  bool
 }
 
 // Cfg proxy config
 type Cfg struct {
-	Addr      string
-	AddrRPC   string
-	AddrStore string
-	AddrPPROF string
-	Namespace string
-	TTLProxy  int64
-	Filers    []*FilterSpec
+	Addr              string
+	AddrHTTPS         string
+	DefaultTLSCert    string
+	DefaultTLSKey     string
+	AddrRPC           string
+	AddrStore         string
+	AddrStoreUserName string
+	AddrStorePwd      string
+	AddrPPROF         string
+	Namespace         string
+	TTLProxy          int64
+	Filers            []*FilterSpec
 
 	Option *Option
 	Metric *util.MetricCfg

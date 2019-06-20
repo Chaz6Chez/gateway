@@ -16,12 +16,14 @@ type render struct {
 	multi        bool
 	multiContext []byte
 	api          *apiRuntime
-	nodes        []*dispathNode
+	nodes        []*dispatchNode
 	doRender     func(*fasthttp.RequestCtx)
 	allocBytes   [][]byte
+	requestTag   string
 }
 
-func (rd *render) init(api *apiRuntime, nodes []*dispathNode) {
+func (rd *render) init(requestTag string, api *apiRuntime, nodes []*dispatchNode) {
+	rd.requestTag = requestTag
 	rd.nodes = nodes
 	rd.api = api
 	rd.doRender = rd.renderSingle
@@ -56,12 +58,7 @@ func (rd *render) renderSingle(ctx *fasthttp.RequestCtx) {
 		ctx.SetStatusCode(dn.res.StatusCode())
 	}
 
-	if dn.err != nil ||
-		dn.code >= fasthttp.StatusBadRequest {
-		log.Errorf("render: render failed, code=<%d>, errors:\n%+v",
-			dn.code,
-			dn.err)
-
+	if dn.hasError() {
 		if rd.api.hasDefaultValue() {
 			rd.renderDefault(ctx)
 			dn.release()
@@ -110,38 +107,39 @@ func (rd *render) renderMulti(ctx *fasthttp.RequestCtx) {
 	}
 
 	if hasError {
-		log.Errorf("render: render failed, code=<%d>, errors:\n%+v",
-			code,
-			err)
-
 		if rd.api.hasDefaultValue() {
 			rd.renderDefault(ctx)
 			return
 		}
 
 		ctx.SetStatusCode(code)
+		log.Errorf("%s: return with %d, errors: %v",
+			rd.requestTag,
+			code,
+			err)
 		return
 	}
 
 	if !hasTemplate {
 		ctx.Write(rd.multiContext)
+		log.Infof("%s: return with aggregation",
+			rd.requestTag)
 		return
 	}
 
 	rd.renderTemplate(ctx, rd.multiContext)
 }
 
-func (rd *render) renderRaw(ctx *fasthttp.RequestCtx, dn *dispathNode) {
+func (rd *render) renderRaw(ctx *fasthttp.RequestCtx, dn *dispatchNode) {
 	ctx.Response.Header.SetContentTypeBytes(dn.getResponseContentType())
 	ctx.Write(dn.getResponseBody())
 	dn.release()
+
+	log.Infof("%s: return with raw body",
+		rd.requestTag)
 }
 
 func (rd *render) renderDefault(ctx *fasthttp.RequestCtx) {
-	if !rd.api.hasDefaultValue() {
-		return
-	}
-
 	header := &ctx.Response.Header
 
 	for _, h := range rd.api.meta.DefaultValue.Headers {
@@ -162,18 +160,25 @@ func (rd *render) renderDefault(ctx *fasthttp.RequestCtx) {
 		ctx.SetStatusCode(fasthttp.StatusOK)
 	}
 	ctx.Write(rd.api.meta.DefaultValue.Body)
+
+	log.Infof("%s: return with default value",
+		rd.requestTag)
 }
 
 func (rd *render) renderTemplate(ctx *fasthttp.RequestCtx, context []byte) {
 	data, err := rd.extract(context)
 	if err != nil {
-		log.Errorf("render: render failed, errors:\n%+v",
-			err)
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
+		log.Errorf("%s: return with 500, errors: %v",
+			rd.requestTag,
+			err)
 		return
 	}
 
 	ctx.Write(data)
+
+	log.Infof("%s: return with template",
+		rd.requestTag)
 }
 
 func (rd *render) extract(src []byte) ([]byte, error) {

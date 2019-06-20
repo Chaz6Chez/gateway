@@ -5,6 +5,7 @@ import (
 
 	"github.com/fagongzi/gateway/pkg/pb"
 	"github.com/fagongzi/gateway/pkg/pb/metapb"
+	"github.com/fagongzi/gateway/pkg/pb/rpcpb"
 )
 
 // APIBuilder api builder
@@ -59,6 +60,12 @@ func (ab *APIBuilder) RemovePerm(perm string) *APIBuilder {
 	}
 
 	ab.value.Perms = perms
+	return ab
+}
+
+// WebSocketOptions set websocket options
+func (ab *APIBuilder) WebSocketOptions(options *metapb.WebSocketOptions) *APIBuilder {
+	ab.value.WebSocketOptions = options
 	return ab
 }
 
@@ -242,6 +249,48 @@ func (ab *APIBuilder) AddDispatchNode(cluster uint64) *APIBuilder {
 	ab.value.Nodes = append(ab.value.Nodes, &metapb.DispatchNode{
 		ClusterID: cluster,
 	})
+
+	return ab
+}
+
+// DispatchNodeTimeouts add timeouts options
+func (ab *APIBuilder) DispatchNodeTimeouts(cluster uint64, readTimeout, writeTimeout int64) *APIBuilder {
+	return ab.DispatchNodeTimeoutsWithIndex(cluster, 0, readTimeout, writeTimeout)
+}
+
+// DispatchNodeTimeoutsWithIndex add timeouts options
+func (ab *APIBuilder) DispatchNodeTimeoutsWithIndex(cluster uint64, idx int, readTimeout, writeTimeout int64) *APIBuilder {
+	node := ab.getNode(cluster, idx)
+	if nil == node {
+		ab.value.Nodes = append(ab.value.Nodes, &metapb.DispatchNode{
+			ClusterID:    cluster,
+			ReadTimeout:  readTimeout,
+			WriteTimeout: writeTimeout,
+		})
+	} else {
+		node.ReadTimeout = readTimeout
+		node.WriteTimeout = writeTimeout
+	}
+
+	return ab
+}
+
+// DispatchNodeRetryStrategy add a retryStrategy
+func (ab *APIBuilder) DispatchNodeRetryStrategy(cluster uint64, strategy *metapb.RetryStrategy) *APIBuilder {
+	return ab.DispatchNodeRetryStrategyWithIndex(cluster, 0, strategy)
+}
+
+// DispatchNodeRetryStrategyWithIndex add a retryStrategy
+func (ab *APIBuilder) DispatchNodeRetryStrategyWithIndex(cluster uint64, idx int, strategy *metapb.RetryStrategy) *APIBuilder {
+	node := ab.getNode(cluster, idx)
+	if nil == node {
+		ab.value.Nodes = append(ab.value.Nodes, &metapb.DispatchNode{
+			ClusterID:     cluster,
+			RetryStrategy: strategy,
+		})
+	} else {
+		node.RetryStrategy = strategy
+	}
 
 	return ab
 }
@@ -598,6 +647,28 @@ func (ab *APIBuilder) addRenderObject(nameInTemplate string, flatAttrs bool, nam
 	return ab
 }
 
+// AddDispatchNodeHost add host
+func (ab *APIBuilder) AddDispatchNodeHost(cluster uint64, hostType metapb.HostType, custom string) *APIBuilder {
+	return ab.AddDispatchNodeHostWithIndex(cluster, 0, hostType, custom)
+}
+
+// AddDispatchNodeHostWithIndex add host
+func (ab *APIBuilder) AddDispatchNodeHostWithIndex(cluster uint64, idx int, hostType metapb.HostType, custom string) *APIBuilder {
+	node := ab.getNode(cluster, idx)
+	if nil == node {
+		ab.value.Nodes = append(ab.value.Nodes, &metapb.DispatchNode{
+			ClusterID:  cluster,
+			HostType:   hostType,
+			CustemHost: custom,
+		})
+	} else {
+		node.HostType = hostType
+		node.CustemHost = custom
+	}
+
+	return ab
+}
+
 // AddTag add tag for api
 func (ab *APIBuilder) AddTag(key, value string) *APIBuilder {
 	ab.value.Tags = append(ab.value.Tags, &metapb.PairValue{
@@ -633,6 +704,18 @@ func (ab *APIBuilder) Commit() (uint64, error) {
 	}
 
 	return ab.c.putAPI(ab.value)
+}
+
+// Build build
+func (ab *APIBuilder) Build() (*rpcpb.PutAPIReq, error) {
+	err := pb.ValidateAPI(&ab.value)
+	if err != nil {
+		return nil, err
+	}
+
+	return &rpcpb.PutAPIReq{
+		API: ab.value,
+	}, nil
 }
 
 func (ab *APIBuilder) getNode(cluster uint64, index int) *metapb.DispatchNode {

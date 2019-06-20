@@ -1,37 +1,75 @@
-搭建Gateway环境
+Gateway Environment Setup
 ------------------------
-这个章节帮助你搭建Gateway环境
+This chapter aims to help you set up Gateway environment.
 
-# 准备
+# Preparation
 ## Etcd
-Gateway目前支持Etcd作为元数据区的存储，所以需要一个Etcd环境，参考：[etcd environment](https://github.com/coreos/etcd)
+Gateway currently supports Etcd as the storage of metadata. To set up etcd, please refer to [etcd environment](https://github.com/coreos/etcd)
 
 
 ## Golang
-如果你希望从源码编译Gateway，你需要一个[golang 环境](https://github.com/golang/go)，必须使用`1.8`以上的版本。
+If you would like to compile Gateway from source code, you need a [Golang environment](https://github.com/golang/go). Go version `1.11` and above is required.
 
-# 从源码编译
-执行如下命令：
+# Compiling from Source Code
+- Makefile
 
-```bash
-cd $GOPATH/src/github.com/fagongzi/gateway/cmd/proxy
-go build -o proxy ./...
+  The following commands are executed under `$GOPATH/src/github.com/fagongzi/gateway`.
 
-cd $GOPATH/src/github.com/fagongzi/gateway/cmd/api
-go build -o apiserver ./...
-```
+  - Compiling binary file for the current OS.
 
-# Gateway组件
-Gateway运行环境包含2个组件：`ApiServer` 和 `Proxy`
+  ```bash
+  make release_version='version string'
+  ```
+
+  - Compiling binary file for a specific OS
+
+  ```bash
+  # Linux
+  make release release_version='version string'
+
+  # Darwin(Mac OS X)
+  make release_darwin release_version='version string'
+  ```
+
+  - Packaging project into a Docker image
+
+  ```bash
+  make docker release_version='version string'
+  ```
+
+  - Packing project into a Docker image with customized content
+
+  ```bash
+  # for demo, including etcd, proxy, apiserver, ui
+  make docker release_version='version string'
+
+  # only proxy
+  make docker release_version='version string' with=proxy
+
+  # only etcd
+  make docker release_version='version string' with=etcd
+
+  # apiserver with ui
+  make docker release_version='version string' with=apiserver
+  ```
+
+  - For more information on compiling
+
+  ```bash
+  make help
+  ```
+
+# Gateway Component
+Gateway has two components: `ApiServer` and `Proxy`.
 
 * ApiServer
-  对外提供API管理元数据。
+  ApiServer provides APIs to manage metadata.
 
 * Proxy
-  Proxy是一个无状态的API代理，提供给终端用户直接访问。
+  Proxy is a stateless API proxy which provides direct access to clients.
 
 ## ApiServer
-ApiServer 对外提供GRPC的服务，用来管理Gateway的元数据
+ApiServer provides GRPC service to manage Gateway metadata.
 
 ```bash
 $ ./apiserver --help
@@ -58,12 +96,12 @@ Usage of ./apiserver:
     	The prefix for service name. (default "/services")
 ```
 
-`discovery`参数用来是否使用服务发现的方式发布ApiServer提供的对外接口
-`namespace`参数用来隔离多个环境，这个配置需要和对应的`Proxy`的`namespace`一致
+`discovery` option is used to determine whether to use service discovery to publish external APIs provided by ApiServer.
+`namespace` option is used to isolate multiple environments. It has to be consistent with `namespace` in `Proxy`.
 
 
 ## proxy
-Proxy是内部所有API的统一对外入口，也就是API统一接入层。
+Proxy is the unified entrance of all internal APIs, which is the API access layer.
 
 ```bash
 $ ./proxy --help
@@ -112,20 +150,20 @@ Usage of ./proxy:
       Show version info
 ```
 
-`namespace`参数用来隔离多个环境，这个配置需要和对应的`ApiServer`的`namespace`一致
+`namespace` option is used to isolate multiple environments. It has to be consistent with `namespace` in `ApiServer`.
 
-# 运行环境
-我们以三台etcd、一台ApiServer,三台Proxy的环境为例
+# Running Environment
+We use 3 etcd servers, 1 ApiServer server, and 3 Proxy servers as an example.
 
-## 环境信息
+## Info
 
-|组件|环境|
+|Component|IP|
 | -------------|:-------------:|
-|etcd集群环境|192.168.1.100,192.168.1.101,192.168.1.102|
+|etcd cluster|192.168.1.100,192.168.1.101,192.168.1.102|
 |Proxy|192.168.1.200,192.168.1.201,192.168.1.202|
 |ApiServer|192.168.1.203|
 
-## 启动Proxy
+## Starting Proxy
 ```bash
 ./proxy --addr=192.168.1.200:80 --addr-rpc=192.168.1.200:9091 --addr-store=etcd://192.168.1.100:2379,192.168.1.101:2379,192.168.1.102:2379 --namespace=test
 ```
@@ -138,14 +176,14 @@ Usage of ./proxy:
 ./proxy --addr=192.168.1.202:80 --addr-rpc=192.168.1.202:9091 --addr-store=etcd://192.168.1.100:2379,192.168.1.101:2379,192.168.1.102:2379 --namespace=test
 ```
 
-用户的API接入地址可以为：192.168.1.201:80、192.168.1.201:80、192.168.1.202:80其中任意一个
+API addresses available to users: 192.168.1.201:80, 192.168.1.201:80, 192.168.1.202:80
 
-## 启动ApiServer
+## Starting ApiServer
 ```bash
 ./apiserver --addr=192.168.1.203:9091 --addr-store=etcd://192.168.1.100:2379,192.168.1.101:2379,192.168.1.102:2379 --discovery --namespace=test
 ```
 
-## 调用ApiServer创建元信息
+## Use ApiServer to create metadata
 [Gateway Restful API](./restful.md)
 
-[Gateway grpc客户端例子](../examples)
+[Gateway grpc client example](../examples)

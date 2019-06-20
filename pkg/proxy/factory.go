@@ -10,10 +10,12 @@ import (
 
 var (
 	// ErrUnknownFilter unknown filter error
-	ErrUnknownFilter = errors.New("unknow filter")
+	ErrUnknownFilter = errors.New("unknown filter")
 )
 
 const (
+	// FilterPrepare prepare filter
+	FilterPrepare = "PREPARE"
 	// FilterHTTPAccess access log filter
 	FilterHTTPAccess = "HTTP-ACCESS"
 	// FilterHeader header filter
@@ -36,6 +38,8 @@ const (
 	FilterCaching = "CACHING"
 	// FilterJWT jwt filter
 	FilterJWT = "JWT"
+	// FilterJSPlugin js plugin engine
+	FilterJSPlugin = "JS-ENGINE"
 )
 
 func (p *Proxy) newFilter(filterSpec *FilterSpec) (filter.Filter, error) {
@@ -46,6 +50,8 @@ func (p *Proxy) newFilter(filterSpec *FilterSpec) (filter.Filter, error) {
 	input := strings.ToUpper(filterSpec.Name)
 
 	switch input {
+	case FilterPrepare:
+		return newPrepareFilter(), nil
 	case FilterHTTPAccess:
 		return newAccessFilter(), nil
 	case FilterHeader:
@@ -68,6 +74,8 @@ func (p *Proxy) newFilter(filterSpec *FilterSpec) (filter.Filter, error) {
 		return newCachingFilter(p.cfg.Option.LimitBytesCaching, p.dispatcher.tw), nil
 	case FilterJWT:
 		return newJWTFilter(p.cfg.Option.JWTCfgFile)
+	case FilterJSPlugin:
+		return p.jsEngine, nil
 	default:
 		return nil, ErrUnknownFilter
 	}
